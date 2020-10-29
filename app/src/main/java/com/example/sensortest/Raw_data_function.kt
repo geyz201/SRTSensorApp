@@ -1,15 +1,20 @@
 package com.example.sensortest
 
+import android.Manifest
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.content.*
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
 import android.text.TextUtils
 import android.util.Log
+import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.Observer
+import kotlinx.android.synthetic.main.activity_motion_function.*
 import kotlinx.android.synthetic.main.activity_raw_data_function.*
 import kotlinx.coroutines.*
 import org.jetbrains.anko.toast
@@ -31,6 +36,7 @@ class Raw_data_function : AppCompatActivity() {
         tv_Gstep3.text = "Z: " + df.format(it.z)
     }
     var processState = false
+    private val LOCATION_PERMISSION = 1
 
 
     private lateinit var mService: SensorRecord
@@ -92,6 +98,7 @@ class Raw_data_function : AppCompatActivity() {
     }
 
 
+    @RequiresApi(Build.VERSION_CODES.M)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_raw_data_function)
@@ -113,7 +120,7 @@ class Raw_data_function : AppCompatActivity() {
         BindViews()
     }
 
-
+    @RequiresApi(Build.VERSION_CODES.M)
     private fun BindViews() {
         btn_start.text = if (processState) "停止" else "开始记录数据"
         btn_start.setOnClickListener {
@@ -130,6 +137,15 @@ class Raw_data_function : AppCompatActivity() {
                 //开启蓝牙
                 getPairedDevices()
 
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    val hasLocationPermission = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
+                    if (hasLocationPermission != PackageManager.PERMISSION_GRANTED) {
+                        //requestPermissions是异步执行的
+                        requestPermissions(arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION),
+                                LOCATION_PERMISSION)
+                    }
+                }
+                while (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)!=PackageManager.PERMISSION_GRANTED) {}
                 val intent = Intent(this, SensorRecord::class.java)
                 intent.setAction("com.example.server.SensorRecord")
                 startService(intent)
@@ -141,6 +157,16 @@ class Raw_data_function : AppCompatActivity() {
         }
 
 
+    }
+
+    @RequiresApi(Build.VERSION_CODES.M)
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == LOCATION_PERMISSION) {
+            if (grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                toast("获取了位置权限")
+            }
+        }
     }
 
     override fun onDestroy() {

@@ -17,6 +17,7 @@ class ZeroCalibration : Fragment(), CoroutineScope by CoroutineScope(Dispatchers
     private lateinit var sensorManager: SensorManager
     private var count = 0
     private val sum = Vec3D()
+    //private val ACCM=ArrayList<Vec3D>()
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View? {
         // Inflate the layout for this fragment
@@ -52,6 +53,7 @@ class ZeroCalibration : Fragment(), CoroutineScope by CoroutineScope(Dispatchers
                     //Data Receive from sensor
                     val tmpVec = Vec3D(event.values)
                     sum += tmpVec
+                    //ACCM.add(tmpVec)
                     count++
                 }
             }

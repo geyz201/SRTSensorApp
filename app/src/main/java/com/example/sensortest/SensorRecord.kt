@@ -1,20 +1,32 @@
 package com.example.sensortest
 
+import android.Manifest
+import android.annotation.SuppressLint
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
 import android.os.*
+import android.util.ArrayMap
+import androidx.annotation.RequiresApi
+import androidx.constraintlayout.motion.widget.Debug.getLocation
+import androidx.core.app.ActivityCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleCoroutineScope
 import androidx.lifecycle.MutableLiveData
+import kotlinx.android.synthetic.main.activity_motion_function.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.jetbrains.anko.toast
 import threeDvector.Rotate
 import threeDvector.Slerp
 import threeDvector.Vec3D
@@ -26,9 +38,12 @@ import kotlin.concurrent.timerTask
 class SensorRecord : Service(), SensorEventListener {
     private val binder = LocalBinder()
     private lateinit var sensorManager: SensorManager
+    private lateinit var locationManager: LocationManager
     private lateinit var powerManager: PowerManager
     private lateinit var m_wkik: PowerManager.WakeLock
     private val sensorData_Speed = ArrayList<Vec3D_t>()
+    private val sensorData = ArrayList<Triple<Long, Vec3D, Float>>()
+    private val GPS_Timing = ArrayList<Long>()
     private var Acc0 = Vec3D()
 
     //private val sensorData_Acc = ArrayList<Vec3D>()
@@ -59,7 +74,8 @@ class SensorRecord : Service(), SensorEventListener {
         private lateinit var lastAccX: Vec3D
         private lateinit var lastGRV: Vec3D
         private lateinit var AccX: Vec3D //已经转换坐标系的加速度
-        private val Speed = Vec3D() //目前初始为0
+        private var Speed = Vec3D()
+        private var lastSpeed = 0F
 
         fun GRV_Update(time: Long, GRV: Vec3D) {
             if (this::lastGRV.isInitialized && this::lastAcc.isInitialized && lastT_GRV <= lastT_Acc) {
@@ -70,15 +86,15 @@ class SensorRecord : Service(), SensorEventListener {
             lastGRV = GRV
         }
 
+        @SuppressLint("MissingPermission")
         fun Acc_Update(time: Long, Acc: Vec3D) {
             lastT_Acc = time
             lastAcc = Acc
+            lastSpeed = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)!!.speed
         }
 
         private fun AccX_Update(time: Long, AccX: Vec3D) {
-            if (this::lastAccX.isInitialized) {
-                Speed += (lastAccX + AccX) * ((time - lastT_AccX).toDouble() / 2e9)
-            }
+            sensorData.add(Triple(time, AccX.copy(), lastSpeed))
             lastT_AccX = time
             lastAccX = AccX
         }
@@ -98,6 +114,51 @@ class SensorRecord : Service(), SensorEventListener {
         }
     }
 
+    val locationListener = object : LocationListener {
+        override fun onProviderDisabled(provider: String) {
+            toast("关闭了GPS")
+        }
+
+        @RequiresApi(Build.VERSION_CODES.M)
+        override fun onProviderEnabled(provider: String) {
+            toast("打开了GPS")
+        }
+
+        @SuppressLint("MissingPermission")
+        @RequiresApi(Build.VERSION_CODES.M)
+        override fun onLocationChanged(location: Location) {
+            GPS_Timing.add(locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)!!.time)
+        }
+
+        override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {
+            TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.M)
+    fun getLocation(locationManager: LocationManager): Location? {
+        var location: Location? = null
+        if (this.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_DENIED) {
+            toast("没有位置权限")
+        } else if (!locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+            toast("没有打开GPS")
+        } else {
+            location = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+            if (location == null) {
+                toast("位置信息为空")
+                location = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+                if (location == null) {
+                    toast("网络位置信息也为空")
+
+                } else {
+                    toast("当前使用网络位置")
+                }
+            }
+        }
+        return location
+    }
+
+    @SuppressLint("MissingPermission")
     override fun onCreate() {
         super.onCreate()
         sensorManager = applicationContext.getSystemService(Context.SENSOR_SERVICE) as SensorManager
@@ -106,6 +167,10 @@ class SensorRecord : Service(), SensorEventListener {
         sensorManager.registerListener(this, sensorAcc, SensorManager.SENSOR_DELAY_NORMAL)
         sensorManager.registerListener(this, sensorGRV, SensorManager.SENSOR_DELAY_NORMAL)
 
+        locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 20, 0F, locationListener)
+        //locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 20, 0F, locationListener)
+
         powerManager = applicationContext.getSystemService(Context.POWER_SERVICE) as PowerManager
         m_wkik = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, SensorRecord::class.qualifiedName)
         m_wkik.acquire()
@@ -113,7 +178,7 @@ class SensorRecord : Service(), SensorEventListener {
         val tmp = applicationContext.FileLoad(filename = "Avg.JSON")
         if (tmp != null) Acc0 = deserialize<Vec3D>(tmp)
         //定时采样
-        Timer().schedule(timerTask { mHandler.sendEmptyMessage(0x2739) }, 3_000, 1_000)
+        //Timer().schedule(timerTask { mHandler.sendEmptyMessage(0x2739) }, 3_000, 1_000)
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
@@ -155,6 +220,7 @@ class SensorRecord : Service(), SensorEventListener {
         super.onDestroy()
         sensorManager.unregisterListener(this)
         m_wkik.release()
-        applicationContext.FileSave(serialize(sensorData_Speed), filename = "SpeedRecord.JSON")
+        applicationContext.FileSave(serialize(sensorData), filename = "SensorRecord.JSON")
+        applicationContext.FileSave(serialize(GPS_Timing), filename = "GPSTiming.JSON")
     }
 }
