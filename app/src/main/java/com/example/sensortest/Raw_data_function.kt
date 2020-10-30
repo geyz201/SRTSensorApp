@@ -1,6 +1,7 @@
 package com.example.sensortest
 
 import android.Manifest
+import android.Manifest.permission.ACCESS_BACKGROUND_LOCATION
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.content.*
@@ -137,15 +138,24 @@ class Raw_data_function : AppCompatActivity() {
                 //开启蓝牙
                 getPairedDevices()
 
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    val hasLocationPermission = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
-                    if (hasLocationPermission != PackageManager.PERMISSION_GRANTED) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    if (checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                        //requestPermissions是异步执行的
+                        requestPermissions(arrayOf(ACCESS_BACKGROUND_LOCATION),
+                                LOCATION_PERMISSION)
+                        while (checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                        }
+                    }
+                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
                         //requestPermissions是异步执行的
                         requestPermissions(arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION),
                                 LOCATION_PERMISSION)
+                        while (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                        }
                     }
                 }
-                while (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)!=PackageManager.PERMISSION_GRANTED) {}
+
                 val intent = Intent(this, SensorRecord::class.java)
                 intent.setAction("com.example.server.SensorRecord")
                 startService(intent)

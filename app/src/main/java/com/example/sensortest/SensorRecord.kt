@@ -65,7 +65,7 @@ class SensorRecord : Service(), SensorEventListener {
     }
 
     //速度计算
-    private val SpeedCaculator = object {
+    private val SpeedCalculator = object {
         private var lastT_Acc: Long = 0
         private var lastT_GRV: Long = 0
         private var lastT_AccX: Long = 0
@@ -76,6 +76,9 @@ class SensorRecord : Service(), SensorEventListener {
         private lateinit var AccX: Vec3D //已经转换坐标系的加速度
         private var Speed = Vec3D()
         private var lastSpeed = 0F
+
+        private var AccCount = 0
+        private var AccSum = Vec3D()
 
         fun GRV_Update(time: Long, GRV: Vec3D) {
             if (this::lastGRV.isInitialized && this::lastAcc.isInitialized && lastT_GRV <= lastT_Acc) {
@@ -94,9 +97,18 @@ class SensorRecord : Service(), SensorEventListener {
         }
 
         private fun AccX_Update(time: Long, AccX: Vec3D) {
-            sensorData.add(Triple(time, AccX.copy(), lastSpeed))
+            //sensorData.add(Triple(time, AccX.copy(), lastSpeed))
             lastT_AccX = time
             lastAccX = AccX
+            AccCount++;
+            AccSum = AccSum + AccX;
+        }
+
+        fun Acc_Clear(): Vec3D {
+            val ans = if (AccCount > 0) AccSum * (1.0 / AccCount) else Vec3D()
+            AccCount = 0
+            AccSum = Vec3D()
+            return ans
         }
 
         fun sample() {
@@ -108,7 +120,7 @@ class SensorRecord : Service(), SensorEventListener {
     private val mHandler = object : Handler(Looper.getMainLooper()) {
         override fun handleMessage(msg: Message) {
             if (msg.what == 0x2739) {
-                SpeedCaculator.sample()
+                SpeedCalculator.sample()
             }
             super.handleMessage(msg)
         }
@@ -125,14 +137,12 @@ class SensorRecord : Service(), SensorEventListener {
         }
 
         @SuppressLint("MissingPermission")
-        @RequiresApi(Build.VERSION_CODES.M)
         override fun onLocationChanged(location: Location) {
-            GPS_Timing.add(locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)!!.time)
+            sensorData.add(Triple(location.time, SpeedCalculator.Acc_Clear(), location.speed))
+            //GPS_Timing.add(location.time)
         }
 
-        override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {
-            TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
-        }
+        override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
     }
 
     @RequiresApi(Build.VERSION_CODES.M)
@@ -206,12 +216,12 @@ class SensorRecord : Service(), SensorEventListener {
                 //Data Receive from sensor
                 val tmpVec = Vec3D(event.values)
                 currentAcc.value = tmpVec
-                SpeedCaculator.Acc_Update(event.timestamp, tmpVec - Acc0)
+                SpeedCalculator.Acc_Update(event.timestamp, tmpVec - Acc0)
             }
             Sensor.TYPE_GAME_ROTATION_VECTOR -> {
                 val tmpVec = Vec3D(event.values)
                 currentGRV.value = tmpVec
-                SpeedCaculator.GRV_Update(event.timestamp, tmpVec)
+                SpeedCalculator.GRV_Update(event.timestamp, tmpVec)
             }
         }
     }
@@ -219,8 +229,9 @@ class SensorRecord : Service(), SensorEventListener {
     override fun onDestroy() {
         super.onDestroy()
         sensorManager.unregisterListener(this)
+        locationManager.removeUpdates(locationListener)
         m_wkik.release()
         applicationContext.FileSave(serialize(sensorData), filename = "SensorRecord.JSON")
-        applicationContext.FileSave(serialize(GPS_Timing), filename = "GPSTiming.JSON")
+        //applicationContext.FileSave(serialize(GPS_Timing), filename = "GPSTiming.JSON")
     }
 }
