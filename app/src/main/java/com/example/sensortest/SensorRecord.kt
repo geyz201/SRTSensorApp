@@ -44,6 +44,7 @@ class SensorRecord : Service(), SensorEventListener {
     private val sensorData_Speed = ArrayList<Vec3D_t>()
     private val sensorData = ArrayList<Triple<Long, Vec3D, Float>>()
     private val GPS_Timing = ArrayList<Long>()
+    private val GPS_location = ArrayList<Pair<Double,Double>>()
     private var Acc0 = Vec3D()
 
     //private val sensorData_Acc = ArrayList<Vec3D>()
@@ -139,33 +140,11 @@ class SensorRecord : Service(), SensorEventListener {
         @SuppressLint("MissingPermission")
         override fun onLocationChanged(location: Location) {
             sensorData.add(Triple(location.time, SpeedCalculator.Acc_Clear(), location.speed))
+            GPS_location.add(Pair(location.latitude,location.longitude))
             //GPS_Timing.add(location.time)
         }
 
         override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
-    }
-
-    @RequiresApi(Build.VERSION_CODES.M)
-    fun getLocation(locationManager: LocationManager): Location? {
-        var location: Location? = null
-        if (this.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_DENIED) {
-            toast("没有位置权限")
-        } else if (!locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-            toast("没有打开GPS")
-        } else {
-            location = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
-            if (location == null) {
-                toast("位置信息为空")
-                location = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
-                if (location == null) {
-                    toast("网络位置信息也为空")
-
-                } else {
-                    toast("当前使用网络位置")
-                }
-            }
-        }
-        return location
     }
 
     @SuppressLint("MissingPermission")
@@ -232,6 +211,7 @@ class SensorRecord : Service(), SensorEventListener {
         locationManager.removeUpdates(locationListener)
         m_wkik.release()
         applicationContext.FileSave(serialize(sensorData), filename = "SensorRecord.JSON")
+        applicationContext.FileSave(serialize(GPS_location), filename = "GPSRecord.JSON")
         //applicationContext.FileSave(serialize(GPS_Timing), filename = "GPSTiming.JSON")
     }
 }
